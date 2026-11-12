@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 23:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "kuerzel",
+  "bezeichnung",
+  "konto"
+ ],
+ "fields": [
+  {
+   "fieldname": "kuerzel",
+   "fieldtype": "Data",
+   "label": "Kürzel",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "bezeichnung",
+   "fieldtype": "Data",
+   "label": "Name",
+   "in_list_view": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "konto",
+   "fieldtype": "Link",
+   "label": "Konto (z. B. Privateinlage)",
+   "options": "Account",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 5
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-11 23:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Eingangsrechnung Import",
+ "name": "Eingangsrechnung Zahler",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "istable": 1,
+ "editable_grid": 1
+}

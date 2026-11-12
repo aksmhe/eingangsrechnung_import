@@ -1,0 +1,189 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 23:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "aktiv",
+  "ordner",
+  "beim_oeffnen_pruefen",
+  "stuendlich",
+  "column_break_1",
+  "firma",
+  "steuervorlage",
+  "rundung_aus",
+  "pdf_an_vorhandene",
+  "section_erkennung",
+  "lieferanten_liste",
+  "section_zahler",
+  "zahler",
+  "section_ablage",
+  "verschieben",
+  "ordner_offen",
+  "ziel_bank",
+  "ziel_zahler",
+  "section_status",
+  "letzter_lauf",
+  "letztes_ergebnis"
+ ],
+ "fields": [
+  {
+   "fieldname": "aktiv",
+   "fieldtype": "Check",
+   "label": "Import aktiv",
+   "default": "0",
+   "description": "Schaltet die Prüfung des Rechnungsordners ein."
+  },
+  {
+   "fieldname": "ordner",
+   "fieldtype": "Data",
+   "label": "Rechnungsordner (Pfad auf dem Server)",
+   "default": "/mnt/eingangsrechnungen",
+   "mandatory_depends_on": "eval:doc.aktiv",
+   "description": "Absoluter Pfad, so wie ERPNext ihn sieht (im Docker-Container z. B. /mnt/eingangsrechnungen). Alle Unterordner werden mit durchsucht."
+  },
+  {
+   "fieldname": "beim_oeffnen_pruefen",
+   "fieldtype": "Check",
+   "label": "Beim Öffnen der Liste Eingangsrechnungen prüfen",
+   "default": "1"
+  },
+  {
+   "fieldname": "stuendlich",
+   "fieldtype": "Check",
+   "label": "Stündlich automatisch erfassen",
+   "default": "0",
+   "description": "Legt fertig benannte Rechnungen auch ohne Öffnen der Liste als Entwurf an. Umbenennen geschieht immer nur mit Bestätigung."
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "firma",
+   "fieldtype": "Link",
+   "label": "Firma",
+   "options": "Company",
+   "mandatory_depends_on": "eval:doc.aktiv"
+  },
+  {
+   "fieldname": "steuervorlage",
+   "fieldtype": "Link",
+   "label": "Einkaufs-Steuervorlage",
+   "options": "Purchase Taxes and Charges Template",
+   "description": "Wird in jeden Entwurf eingetragen, z. B. eine Vorlage ohne Zeilen für Kleinunternehmer (§ 19 UStG). Leer = ERPNext-Standard."
+  },
+  {
+   "fieldname": "rundung_aus",
+   "fieldtype": "Check",
+   "label": "Gerundeten Gesamtbetrag abschalten",
+   "default": "1"
+  },
+  {
+   "fieldname": "pdf_an_vorhandene",
+   "fieldtype": "Check",
+   "label": "PDF auch an vorhandene Rechnungen anhängen",
+   "default": "1",
+   "description": "Gibt es die Rechnung (Lieferant + Rechnungsnummer) schon und hat sie noch keinen Anhang, wird die PDF angehängt."
+  },
+  {
+   "fieldname": "section_erkennung",
+   "fieldtype": "Section Break",
+   "label": "Erkennung"
+  },
+  {
+   "fieldname": "lieferanten_liste",
+   "fieldtype": "Small Text",
+   "label": "Lieferanten-Suchbegriffe",
+   "description": "Eine Zeile je Lieferant: Suchbegriff = Name im Dateinamen. Zeilen mit ! davor (z. B. !MeineFirma) werden nie als Lieferant genommen. Leer = Datei lieferanten.txt im Rechnungsordner verwenden."
+  },
+  {
+   "fieldname": "section_zahler",
+   "fieldtype": "Section Break",
+   "label": "Privat bezahlte Rechnungen"
+  },
+  {
+   "fieldname": "zahler",
+   "fieldtype": "Table",
+   "label": "Zahler (Kürzel im Dateinamen)",
+   "options": "Eingangsrechnung Zahler",
+   "description": "Kürzel am Ende des Dateinamens (z. B. MHE) = Rechnung wurde privat bezahlt. Das Konto (z. B. Privateinlage) erkennt bezahlte Rechnungen beim Verschieben."
+  },
+  {
+   "fieldname": "section_ablage",
+   "fieldtype": "Section Break",
+   "label": "Ablage bezahlter Rechnungen"
+  },
+  {
+   "fieldname": "verschieben",
+   "fieldtype": "Check",
+   "label": "Bezahlte Rechnungen aus dem Ordner für offene Rechnungen verschieben",
+   "default": "0"
+  },
+  {
+   "fieldname": "ordner_offen",
+   "fieldtype": "Data",
+   "label": "Unterordner offene Rechnungen",
+   "default": "offene Rechnungen",
+   "depends_on": "eval:doc.verschieben"
+  },
+  {
+   "fieldname": "ziel_bank",
+   "fieldtype": "Data",
+   "label": "Ziel bei Zahlung vom Firmenkonto",
+   "default": "Bezahlte Rechnungen/Bank/{jahr}/{monat} - {monatsname}",
+   "depends_on": "eval:doc.verschieben",
+   "description": "Platzhalter: {jahr}, {monat} (01–12), {monatsname} (Januar …) – nach Rechnungsdatum."
+  },
+  {
+   "fieldname": "ziel_zahler",
+   "fieldtype": "Data",
+   "label": "Ziel bei privater Zahlung",
+   "default": "Bezahlte Rechnungen/Privat/{jahr}",
+   "depends_on": "eval:doc.verschieben",
+   "description": "Zusätzlich {kuerzel}. Das Kürzel wird an den Dateinamen angehängt."
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "letzter_lauf",
+   "fieldtype": "Datetime",
+   "label": "Letzter Lauf",
+   "read_only": 1
+  },
+  {
+   "fieldname": "letztes_ergebnis",
+   "fieldtype": "Small Text",
+   "label": "Letztes Ergebnis",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-11 23:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Eingangsrechnung Import",
+ "name": "Eingangsrechnung Import Einstellungen",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Accounts Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "issingle": 1,
+ "track_changes": 1
+}

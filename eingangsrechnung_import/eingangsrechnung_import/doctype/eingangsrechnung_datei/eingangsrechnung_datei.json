@@ -1,0 +1,103 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 23:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "pfad",
+  "status",
+  "rechnung",
+  "column_break_1",
+  "sha256",
+  "groesse",
+  "hinweis"
+ ],
+ "fields": [
+  {
+   "fieldname": "pfad",
+   "fieldtype": "Data",
+   "label": "Datei (Pfad im Rechnungsordner)",
+   "length": 600,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "options": "Entwurf angelegt\nVorhanden\nVerschoben\nIgnoriert\nFehler"
+  },
+  {
+   "fieldname": "rechnung",
+   "fieldtype": "Link",
+   "label": "Eingangsrechnung",
+   "options": "Purchase Invoice",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sha256",
+   "fieldtype": "Data",
+   "label": "Prüfsumme (SHA-256)",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "groesse",
+   "fieldtype": "Int",
+   "label": "Größe (Bytes)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "hinweis",
+   "fieldtype": "Small Text",
+   "label": "Hinweis",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-11 23:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Eingangsrechnung Import",
+ "name": "Eingangsrechnung Datei",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1,
+   "report": 1,
+   "export": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Accounts Manager",
+   "write": 1,
+   "report": 1,
+   "export": 1
+  },
+  {
+   "read": 1,
+   "role": "Accounts User",
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "hash",
+ "title_field": "pfad",
+ "show_title_field_in_link": 1,
+ "track_changes": 1
+}
