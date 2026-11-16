@@ -271,7 +271,7 @@ erpnext_eingangsrechnung.lieferanten_anlegen = function (liste, i, angelegt, fer
 			{ fieldtype: "Column Break" },
 			{ fieldname: "payment_terms", fieldtype: "Link", options: "Payment Terms Template", label: __("Zahlungsbedingung"), default: v.zahlungsbedingung },
 			{ fieldname: "default_currency", fieldtype: "Link", options: "Currency", label: __("Standardwährung"), default: v.standardwaehrung,
-				description: v.waehrung && v.waehrung !== v.standardwaehrung ? __("Rechnung ist in {0}.", [v.waehrung]) : "" },
+				description: v.waehrung && v.waehrung !== v.standardwaehrung ? __("Rechnung ist in {0}. Feld leer lassen – die Rechnung kann trotzdem in {0} sein.", [v.waehrung]) : "" },
 			{ fieldname: "kreditor", fieldtype: "Data", label: __("Kreditorennummer"), default: v.kreditor, hidden: v.kreditor_moeglich ? 0 : 1 },
 			{ fieldname: "website", fieldtype: "Data", label: __("Webseite"), default: v.website },
 			{ fieldtype: "Section Break", label: __("Adresse") },

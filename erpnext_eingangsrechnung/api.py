@@ -634,9 +634,19 @@ def lieferant_anlegen(daten, dateien=None):
 	sup.payment_terms = d.payment_terms or None
 	sup.website = (d.website or "").strip() or None
 	sup.supplier_details = (d.notiz or "").strip() or None
-	if d.default_currency:
-		sup.default_currency = d.default_currency
 	konto = frappe.get_cached_value("Company", firma, "default_payable_account")
+	waehrung_hinweis = None
+	if d.default_currency:
+		# ERPNext erlaubt als Standardwährung nur die Firmenwährung oder die Währung
+		# des Kreditorenkontos. Sonst leer lassen – Rechnungen gehen trotzdem in Fremdwährung.
+		erlaubt = {frappe.get_cached_value("Company", firma, "default_currency")}
+		if konto:
+			erlaubt.add(frappe.get_cached_value("Account", konto, "account_currency"))
+		if d.default_currency in erlaubt:
+			sup.default_currency = d.default_currency
+		else:
+			waehrung_hinweis = _("Standardwährung {0} nicht gesetzt: Das Kreditorenkonto wird in {1} geführt. Rechnungen in {0} gehen trotzdem.").format(
+				d.default_currency, ", ".join(sorted(w for w in erlaubt if w)))
 	if konto:
 		zeile = {"company": firma, "account": konto}
 		if d.kreditor and frappe.get_meta("Party Account").has_field("debtor_creditor_number"):
@@ -645,6 +655,8 @@ def lieferant_anlegen(daten, dateien=None):
 	sup.insert()
 
 	ergebnis = {"lieferant": sup.name, "adresse": None, "kontakt": None, "bankkonto": None, "hinweise": []}
+	if waehrung_hinweis:
+		ergebnis["hinweise"].append(waehrung_hinweis)
 
 	if d.strasse or d.ort:
 		land = d.land or frappe.get_cached_value("Company", firma, "country")
