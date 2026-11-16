@@ -159,7 +159,7 @@ erpnext_eingangsrechnung.dialog = function (listview, daten, manuell) {
 	dialog.show();
 };
 
-erpnext_eingangsrechnung.erfassen = function (listview, manuell) {
+erpnext_eingangsrechnung.erfassen = function (listview, manuell, vorher) {
 	erpnext_eingangsrechnung.laeuft = true;
 	frappe.call({
 		method: "erpnext_eingangsrechnung.api.erfassen",
@@ -168,43 +168,162 @@ erpnext_eingangsrechnung.erfassen = function (listview, manuell) {
 		callback(r) {
 			erpnext_eingangsrechnung.laeuft = false;
 			const b = r.message || {};
-			const esc = frappe.utils.escape_html;
-			const link = (name) => `<a href="/app/purchase-invoice/${encodeURIComponent(name)}">${esc(name)}</a>`;
-			const teile = [];
-			if ((b.angelegt || []).length) {
-				teile.push(
-					`<b>${__("Neue Entwürfe")}</b><br>` +
-						b.angelegt
-							.map(
-								(x) =>
-									`${link(x.rechnung)} – ${esc(x.lieferant)} – ${
-										x.betrag != null ? format_currency(x.betrag, "EUR") : __("Betrag fehlt")
-									}<div class="text-muted small">${esc(x.datei)}</div>`
-							)
-							.join("")
+			// Ergebnis eines früheren Laufs (vor dem Anlegen neuer Lieferanten) mit anzeigen
+			if (vorher) {
+				["angelegt", "vorhanden", "verschoben"].forEach((k) => {
+					b[k] = (vorher[k] || []).concat(b[k] || []);
+				});
+			}
+			const fehlt = b.lieferant_fehlt || [];
+			if (fehlt.length && !vorher) {
+				erpnext_eingangsrechnung.lieferanten_anlegen(fehlt, 0, 0, () =>
+					erpnext_eingangsrechnung.erfassen(listview, true, b)
 				);
+				return;
 			}
-			if ((b.verschoben || []).length) {
-				teile.push(
-					`<b>${__("Bezahlt und verschoben")}</b><br>` +
-						b.verschoben.map((x) => `${link(x.rechnung)} → ${esc(x.nach)}`).join("<br>")
-				);
-			}
-			if ((b.fehler || []).length) {
-				teile.push(
-					`<b style="color:var(--red-600)">${__("Probleme")}</b><br>` +
-						b.fehler.map((x) => `${esc(x.datei)}: ${esc(x.meldung)}`).join("<br>")
-				);
-			}
-			if (teile.length) {
-				frappe.msgprint({ title: __("Rechnungsordner"), message: teile.join("<hr>"), wide: true });
-				listview.refresh();
-			} else if (manuell) {
-				frappe.show_alert({ message: __("Keine neuen Rechnungen im Ordner."), indicator: "green" });
-			}
+			erpnext_eingangsrechnung.ergebnis(listview, manuell, b);
 		},
 		error() {
 			erpnext_eingangsrechnung.laeuft = false;
 		},
 	});
+};
+
+erpnext_eingangsrechnung.ergebnis = function (listview, manuell, b) {
+	const esc = frappe.utils.escape_html;
+	const link = (name) => `<a href="/app/purchase-invoice/${encodeURIComponent(name)}">${esc(name)}</a>`;
+	const teile = [];
+	if ((b.angelegt || []).length) {
+		teile.push(
+			`<b>${__("Neue Entwürfe")}</b><br>` +
+				b.angelegt
+					.map(
+						(x) =>
+							`${link(x.rechnung)} – ${esc(x.lieferant)} – ${
+								x.betrag != null ? format_currency(x.betrag, x.waehrung || "EUR") : __("Betrag fehlt")
+							}<div class="text-muted small">${esc(x.datei)}</div>`
+					)
+					.join("")
+		);
+	}
+	if ((b.vorhanden || []).length) {
+		teile.push(
+			`<b>${__("Schon in ERPNext")}</b><br>` +
+				b.vorhanden.map((x) => `${link(x.rechnung)} – ${esc(x.hinweis || "")}`).join("<br>")
+		);
+	}
+	if ((b.verschoben || []).length) {
+		teile.push(
+			`<b>${__("Bezahlt und verschoben")}</b><br>` +
+				b.verschoben.map((x) => `${link(x.rechnung)} → ${esc(x.nach)}`).join("<br>")
+		);
+	}
+	if ((b.fehler || []).length) {
+		teile.push(
+			`<b style="color:var(--orange-600)">${__("Noch offen")}</b><br>` +
+				b.fehler.map((x) => `${esc(x.datei)}: ${esc(x.meldung)}`).join("<br>")
+		);
+	}
+	if (teile.length) {
+		frappe.msgprint({
+			title: __("Rechnungsordner – {0}", [b.zusammenfassung || ""]),
+			message: teile.join("<hr>"),
+			wide: true,
+		});
+		listview.refresh();
+	} else if (manuell) {
+		frappe.show_alert({ message: __("Keine neuen Rechnungen im Ordner."), indicator: "green" });
+	}
+};
+
+// Fehlende Lieferanten nacheinander zum Anlegen anbieten; danach fertig() aufrufen
+erpnext_eingangsrechnung.lieferanten_anlegen = function (liste, i, angelegt, fertig) {
+	if (i >= liste.length) {
+		if (angelegt) fertig();
+		else fertig();
+		return;
+	}
+	const eintrag = liste[i];
+	const v = eintrag.vorschlag || {};
+	const esc = frappe.utils.escape_html;
+	const pdf = "/api/method/erpnext_eingangsrechnung.api.datei_anzeigen?pfad=" + encodeURIComponent(v.pfad || eintrag.dateien[0]);
+	const dialog = new frappe.ui.Dialog({
+		title: __("Lieferant „{0}“ anlegen?", [eintrag.name]),
+		size: "large",
+		fields: [
+			{
+				fieldtype: "HTML",
+				fieldname: "info",
+				options: `<p>${__(
+					"Diesen Lieferanten gibt es in ERPNext noch nicht. Betroffen: {0} Rechnung(en).",
+					[eintrag.dateien.length]
+				)} <a href="${pdf}" target="_blank" rel="noopener">${__("Rechnung ansehen")}</a></p>
+				<p class="text-muted small">${__(
+					"Die Daten wurden aus der Rechnung gelesen ({0}). Bitte prüfen und ergänzen.",
+					[esc(v.quelle || "")]
+				)}</p>`,
+			},
+			{ fieldtype: "Section Break", label: __("Firma") },
+			{ fieldname: "supplier_name", fieldtype: "Data", label: __("Name"), reqd: 1, default: v.name },
+			{ fieldname: "supplier_group", fieldtype: "Link", options: "Supplier Group", label: __("Lieferantengruppe"), default: v.lieferantengruppe },
+			{ fieldname: "tax_id", fieldtype: "Data", label: __("USt-IdNr. / Tax ID"), default: v.tax_id },
+			{ fieldname: "tax_category", fieldtype: "Link", options: "Tax Category", label: __("Steuerkategorie"), default: v.steuerkategorie },
+			{ fieldtype: "Column Break" },
+			{ fieldname: "payment_terms", fieldtype: "Link", options: "Payment Terms Template", label: __("Zahlungsbedingung"), default: v.zahlungsbedingung },
+			{ fieldname: "default_currency", fieldtype: "Link", options: "Currency", label: __("Standardwährung"), default: v.standardwaehrung,
+				description: v.waehrung && v.waehrung !== v.standardwaehrung ? __("Rechnung ist in {0}.", [v.waehrung]) : "" },
+			{ fieldname: "kreditor", fieldtype: "Data", label: __("Kreditorennummer"), default: v.kreditor, hidden: v.kreditor_moeglich ? 0 : 1 },
+			{ fieldname: "website", fieldtype: "Data", label: __("Webseite"), default: v.website },
+			{ fieldtype: "Section Break", label: __("Adresse") },
+			{ fieldname: "strasse", fieldtype: "Data", label: __("Straße"), default: v.strasse },
+			{ fieldname: "adresszusatz", fieldtype: "Data", label: __("Adresszusatz"), default: v.adresszusatz },
+			{ fieldname: "plz", fieldtype: "Data", label: __("PLZ"), default: v.plz },
+			{ fieldname: "ort", fieldtype: "Data", label: __("Ort"), default: v.ort },
+			{ fieldtype: "Column Break" },
+			{ fieldname: "bundesland", fieldtype: "Data", label: __("Bundesland / Provinz"), default: v.bundesland },
+			{ fieldname: "land", fieldtype: "Link", options: "Country", label: __("Land"), default: v.land },
+			{ fieldname: "email", fieldtype: "Data", options: "Email", label: __("E-Mail"), default: v.email },
+			{ fieldname: "telefon", fieldtype: "Data", label: __("Telefon"), default: v.telefon },
+			{ fieldtype: "Section Break", label: __("Bankverbindung"), collapsible: v.iban ? 0 : 1 },
+			{ fieldname: "iban", fieldtype: "Data", label: __("IBAN"), default: v.iban },
+			{ fieldname: "bic", fieldtype: "Data", label: __("BIC"), default: v.bic },
+			{ fieldtype: "Column Break" },
+			{ fieldname: "bank", fieldtype: "Data", label: __("Bank"), default: v.bank,
+				description: __("Ohne Banknamen wird die IBAN nur in den Details vermerkt.") },
+			{ fieldname: "kontoinhaber", fieldtype: "Data", label: __("Kontoinhaber"), default: v.kontoinhaber },
+			{ fieldtype: "Section Break" },
+			{ fieldname: "notiz", fieldtype: "Small Text", label: __("Notiz (Lieferanten-Details)"), default: v.notiz },
+		],
+		primary_action_label: __("Lieferant anlegen"),
+		primary_action(werte) {
+			frappe.call({
+				method: "erpnext_eingangsrechnung.api.lieferant_anlegen",
+				args: { daten: werte, dateien: eintrag.dateien },
+				freeze: true,
+				freeze_message: __("Lieferant wird angelegt …"),
+				callback(r) {
+					const e = r.message || {};
+					frappe.show_alert(
+						{ message: __("Lieferant {0} angelegt.", [esc(e.lieferant || "")]), indicator: "green" },
+						6
+					);
+					(e.hinweise || []).forEach((h) => frappe.show_alert({ message: esc(h), indicator: "orange" }, 10));
+					dialog.weiter = true;
+					dialog.hide();
+					erpnext_eingangsrechnung.lieferanten_anlegen(liste, i + 1, angelegt + 1, fertig);
+				},
+			});
+		},
+		secondary_action_label: __("Überspringen"),
+		secondary_action() {
+			dialog.weiter = true;
+			dialog.hide();
+			erpnext_eingangsrechnung.lieferanten_anlegen(liste, i + 1, angelegt, fertig);
+		},
+	});
+	dialog.onhide = () => {
+		// Mit X geschlossen: wie Überspringen
+		if (!dialog.weiter) erpnext_eingangsrechnung.lieferanten_anlegen(liste, i + 1, angelegt, fertig);
+	};
+	dialog.show();
 };

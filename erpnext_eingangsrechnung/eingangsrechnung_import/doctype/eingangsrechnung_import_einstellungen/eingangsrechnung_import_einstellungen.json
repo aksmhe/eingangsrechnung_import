@@ -22,6 +22,14 @@
   "ordner_offen",
   "ziel_bank",
   "ziel_zahler",
+  "section_lieferanten",
+  "lieferantengruppe",
+  "zahlungsbedingung",
+  "kreditor_ab",
+  "column_break_lief",
+  "steuerkat_inland",
+  "steuerkat_eu",
+  "steuerkat_drittland",
   "section_status",
   "letzter_lauf",
   "letztes_ergebnis"
@@ -144,6 +152,53 @@
    "description": "Zusätzlich {kuerzel}. Das Kürzel wird an den Dateinamen angehängt."
   },
   {
+   "fieldname": "section_lieferanten",
+   "fieldtype": "Section Break",
+   "label": "Neue Lieferanten",
+   "description": "Fehlt ein Lieferant, fragt der Import, ob er ihn mit den Daten aus der Rechnung anlegen soll. Diese Werte werden vorgeschlagen."
+  },
+  {
+   "fieldname": "lieferantengruppe",
+   "fieldtype": "Link",
+   "label": "Lieferantengruppe",
+   "options": "Supplier Group"
+  },
+  {
+   "fieldname": "zahlungsbedingung",
+   "fieldtype": "Link",
+   "label": "Zahlungsbedingung, wenn nichts erkannt",
+   "options": "Payment Terms Template"
+  },
+  {
+   "fieldname": "kreditor_ab",
+   "fieldtype": "Int",
+   "label": "Kreditorennummern ab",
+   "description": "Nur mit erpnext_datev: nächste freie Kreditorennummer ab diesem Wert (z. B. 70001). 0 = keine Nummer vergeben."
+  },
+  {
+   "fieldname": "column_break_lief",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "steuerkat_inland",
+   "fieldtype": "Link",
+   "label": "Steuerkategorie Inland",
+   "options": "Tax Category",
+   "description": "Für Lieferanten mit deutscher USt-IdNr. bzw. Sitz im Land der Firma."
+  },
+  {
+   "fieldname": "steuerkat_eu",
+   "fieldtype": "Link",
+   "label": "Steuerkategorie EU",
+   "options": "Tax Category"
+  },
+  {
+   "fieldname": "steuerkat_drittland",
+   "fieldtype": "Link",
+   "label": "Steuerkategorie Drittland",
+   "options": "Tax Category"
+  },
+  {
    "fieldname": "section_status",
    "fieldtype": "Section Break",
    "label": "Status"
@@ -162,7 +217,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-11 23:00:00.000000",
+ "modified": "2026-11-17 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Eingangsrechnung Import",
  "name": "Eingangsrechnung Import Einstellungen",

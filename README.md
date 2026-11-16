@@ -17,8 +17,9 @@ Alles läuft auf dem eigenen Server. Es werden **keine Cloud- oder KI-Dienste** 
 3. **Entwürfe:** Für jede fertig benannte PDF ohne passende Eingangsrechnung wird ein Entwurf angelegt:
    Lieferant (über Name oder USt-IdNr.), Rechnungsnummer, Rechnungs- und Buchungsdatum, **Bruttobetrag** als eine Position,
    Aufwandskonto und Text von der letzten Rechnung dieses Lieferanten, gewählte Steuervorlage, PDF als privater Anhang.
-4. **Vorhandene Rechnungen** (gleicher Lieferant + Rechnungsnummer) werden nicht doppelt angelegt; die PDF wird auf Wunsch angehängt, wenn noch keine da ist.
-5. **Bezahlte Rechnungen verschieben (optional):** Liegt eine Rechnung im Ordner für offene Rechnungen und ist sie in ERPNext bezahlt, wird die Datei in den Zielordner verschoben – je nach Zahlung vom Firmenkonto oder privat (Buchungssatz auf das Konto eines „Zahlers“, z. B. Privateinlage). Bei privater Zahlung wird das Kürzel an den Dateinamen gehängt.
+4. **Neue Lieferanten:** Gibt es den Lieferanten noch nicht, fragt die App, ob sie ihn anlegen soll. Ein Formular zeigt alle Daten aus der Rechnung zum Prüfen: Name, Adresse, Land, USt-IdNr./Tax ID, Steuerkategorie (Inland/EU/Drittland), Zahlungsbedingung (aus „Vorkasse“, „Zahlungsziel 30 Tage“, „bis zum …“), E-Mail, Telefon, Webseite, Bankverbindung, Steuernummer und Handelsregister – bei E-Rechnungen exakt aus der XML. Angelegt werden Lieferant, Adresse, Kontakt, Bankkonto und (mit erpnext_datev) die nächste freie Kreditorennummer. Danach werden die Rechnungen sofort erfasst. Eigene Daten (Firma, ERPNext-Benutzer) werden nie als Lieferantendaten übernommen.
+5. **Vorhandene Rechnungen** (gleicher Lieferant + Rechnungsnummer) werden nicht doppelt angelegt; die PDF wird auf Wunsch angehängt, wenn noch keine da ist.
+6. **Bezahlte Rechnungen verschieben (optional):** Liegt eine Rechnung im Ordner für offene Rechnungen und ist sie in ERPNext bezahlt, wird die Datei in den Zielordner verschoben – je nach Zahlung vom Firmenkonto oder privat (Buchungssatz auf das Konto eines „Zahlers“, z. B. Privateinlage). Bei privater Zahlung wird das Kürzel an den Dateinamen gehängt.
 
 Jede verarbeitete Datei steht in der Liste **Eingangsrechnung Datei** (Status, Rechnung, Prüfsumme). Dateien werden über ihre SHA-256-Prüfsumme wiedererkannt, auch wenn sie verschoben oder umbenannt wurden.
 
@@ -27,6 +28,8 @@ Jede verarbeitete Datei steht in der Liste **Eingangsrechnung Datei** (Status, R
 - E-Rechnungen (ZUGFeRD/Factur-X mit eingebetteter XML): Nummer, Datum, Lieferant, USt-IdNr. und Betrag direkt aus der XML.
 - Sonst aus dem PDF-Text: Datum hinter „Rechnungsdatum“, Nummer hinter „Rechnungsnummer/Rechnung Nr.“, Betrag hinter „Zahlbetrag“, „Rechnungsbetrag“, „Endbetrag“, „Gesamt“ usw.
 - Lieferant: zuerst die Suchbegriffe aus den Einstellungen (oder `lieferanten.txt` im Rechnungsordner), sonst erste Firma mit Rechtsform, sonst Web-Domain.
+- Währung (EUR, USD, GBP, CHF) wird erkannt; Rechnungen in Fremdwährung werden in dieser Währung angelegt, mit Hinweis, den Kurs zu prüfen. Bei ausländischen Lieferanten steht im Entwurf ein Hinweis zur Umsatzsteuer (Reverse Charge).
+- Englische Rechnungen und PDFs, bei denen die Werte vor den Beschriftungen stehen (z. B. „Amount Paid“), werden erkannt.
 - Gescannte PDFs ohne Text: Angaben von Hand im Fenster eintragen; der Betrag bleibt im Entwurf 0 und ist im Hinweis markiert.
 
 ## Einstellungen
@@ -45,6 +48,7 @@ Jede verarbeitete Datei steht in der Liste **Eingangsrechnung Datei** (Status, R
 | PDF auch an vorhandene Rechnungen anhängen | Hängt die PDF an bereits erfasste Rechnungen ohne Anhang. |
 | Lieferanten-Suchbegriffe | `Suchbegriff = Name im Dateinamen`, `!EigeneFirma` wird nie als Lieferant genommen. Leer = `lieferanten.txt` im Ordner. |
 | Zahler | Kürzel (z. B. `MHE`), Name, Konto (z. B. Privateinlage). |
+| Neue Lieferanten | Vorschläge für Lieferantengruppe, Zahlungsbedingung (falls keine erkannt), Kreditorennummern ab (z. B. 70001, nur mit erpnext_datev) und die Steuerkategorien für Inland, EU und Drittland. |
 | Ablage bezahlter Rechnungen | Unterordner für offene Rechnungen und Zielmuster mit `{jahr}`, `{monat}`, `{monatsname}`, `{kuerzel}` (nach Rechnungsdatum). |
 
 ## Installation (Docker / frappe_docker)
@@ -74,7 +78,7 @@ Voraussetzungen: Frappe/ERPNext 15 oder 16. `pypdf` ist bereits Teil von Frappe.
 
 - Eine Position je Rechnung (Bruttobetrag). Für Lagerartikel oder mehrere Steuersätze den Entwurf von Hand anpassen.
 - Erkennung per Regeln: Ungewöhnliche Layouts brauchen Korrektur im Fenster oder im Entwurf.
-- Lieferanten werden nicht automatisch angelegt; fehlt einer, erscheint ein Hinweis.
+- Neue Lieferanten werden nur nach Bestätigung im Formular angelegt; die Erkennung der Adresse ist ein Vorschlag und sollte geprüft werden.
 
 ---
 

@@ -64,20 +64,21 @@ NUMMER_LABELS = [
 
 # Bruttobetrag: Reihenfolge = Vorrang
 BETRAG_LABELS = [
-	r"Zahlbetrag", r"Rechnungsbetrag(?:\s+von)?", r"Zu\s+zahlender\s+Betrag", r"Endbetrag",
+	r"Zahlbetrag", r"Amount\s+Paid", r"Rechnungsbetrag(?:\s+von)?", r"Zu\s+zahlender\s+Betrag", r"Endbetrag",
 	r"Gesamtbetrag(?:\s*\(?brutto\)?)?", r"Summe\s*\(?brutto\)?", r"Bruttobetrag",
-	r"Gesamtpreis", r"Amount\s+due", r"Total\s+due", r"Gesamtsumme", r"Gesamt", r"Total",
+	r"Gesamtpreis", r"Amount\s+due", r"Total\s+due", r"Gesamtsumme", r"Gesamt", r"Total\s+Amount", r"Total",
 ]
 # Zeilen, die zwar ein Label enthalten, aber nicht den Bruttobetrag
 BETRAG_FALSCH = re.compile(
 	r"Gesamtbetrag\s+(?:MwSt|USt)|(?:MwSt|USt)\.?\s+Gesamt|netto|exkl|Zwischensumme|Stammkapital",
 	re.IGNORECASE,
 )
-RE_BETRAG = re.compile(r"(?<![\d,.])(\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}|\d+\.\d{2})(?![\d])")
+RE_BETRAG = re.compile(r"(?<![\d,.])(\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+,\d{2}|\d+\.\d{2})(?![\d])")
 
-RECHTSFORMEN = r"(?:GmbH\s*&\s*Co\.?\s*KG|GmbH|AG|KG|OHG|UG|e\.\s?K\.|GbR|SE|Ltd\.?|Inc\.?|LLC|B\.V\.|S\.?A\.?R\.?L\.?)"
+RECHTSFORMEN = (r"(?:GmbH\s*&\s*Co\.?\s*KG|GmbH|AG|KG|OHG|UG|e\.\s?K\.|GbR|SE|Ltd\.?|Limited|Inc\.?|LLC|"
+	r"Corp\.?|Corporation|B\.\s?V\.?|S\.?A\.?R\.?L\.?|PartG(?:\s+mbB)?)")
 RE_FIRMA = re.compile(rf"([A-ZÄÖÜ0-9][\w&.,'\- ]{{1,60}}?\s{RECHTSFORMEN})(?![\w])")
-RE_DOMAIN = re.compile(r"(?:www\.|@)([a-z0-9\-]+)\.(?:de|com|net|org|eu|at|ch|io|shop)\b", re.IGNORECASE)
+RE_DOMAIN = re.compile(r"(?:www\.|@)([a-z0-9\-]+)\.(?:de|com|net|org|eu|at|ch|io|shop|ai|co|app)\b", re.IGNORECASE)
 GENERISCHE_DOMAINS = {"gmail", "gmx", "web", "t-online", "outlook", "hotmail", "yahoo", "icloud", "posteo", "paypal"}
 RE_UST_ID = re.compile(r"\b(DE\s?\d{3}\s?\d{3}\s?\d{3}|ATU\d{8}|LU\d{8}|NL\d{9}B\d{2}|IE\d{7}[A-Z]{1,2})\b")
 
@@ -183,6 +184,9 @@ def lies_factur_x(xml_bytes):
 				for reg in verkaeufer.iter():
 					if lokal(reg.tag) == "ID" and reg.get("schemeID") == "VA" and reg.text:
 						info["ust_id"] = reg.text.strip().replace(" ", "")
+			waehrung = finde(handel, "ApplicableHeaderTradeSettlement", "InvoiceCurrencyCode")
+			if waehrung is not None and waehrung.text:
+				info["waehrung"] = waehrung.text.strip()
 			summen = finde(handel, "ApplicableHeaderTradeSettlement",
 				"SpecifiedTradeSettlementHeaderMonetarySummation")
 			if summen is not None:
@@ -278,13 +282,16 @@ def finde_lieferant(text, bekannte, eigene):
 
 def zahl(wert):
 	wert = wert.strip()
+	if re.fullmatch(r"\d{1,3}(?:,\d{3})+\.\d{2}", wert):  # 1,234.56 (englisch)
+		return float(wert.replace(",", ""))
 	if "," in wert:
 		wert = wert.replace(".", "").replace(",", ".")
 	return float(wert)
 
 
 def finde_betrag(text):
-	"""Bruttobetrag hinter einem bekannten Label (gleiche oder nächste Zeile)."""
+	"""Bruttobetrag an einem bekannten Label: zuerst dahinter (gleiche oder nächste
+	Zeile), sonst direkt davor (manche PDFs geben Werte vor den Beschriftungen aus)."""
 	for label in BETRAG_LABELS:
 		for treffer in re.finditer(rf"\b{label}\b", text, re.IGNORECASE):
 			zeile_start = text.rfind("\n", 0, treffer.start()) + 1
@@ -292,13 +299,42 @@ def finde_betrag(text):
 			zeile = text[zeile_start: zeile_ende if zeile_ende >= 0 else len(text)]
 			if BETRAG_FALSCH.search(zeile):
 				continue
-			m = RE_BETRAG.search(text[treffer.end(): treffer.end() + 80])
-			if m:
-				try:
-					return zahl(m.group(1))
-				except ValueError:
+			danach = text[treffer.end(): treffer.end() + 80]
+			# nur bis zum nächsten Label schauen
+			naechstes = re.search(r"\n[^\d\n$€£]*[A-Za-zÄÖÜäöü]{3,}[^\n]*:\s*\n", danach)
+			if naechstes:
+				danach = danach[: naechstes.start()]
+			m = RE_BETRAG.search(danach)
+			if not m:
+				# Werte davor nur, wenn die Beschriftung allein in ihrer Zeile steht
+				if not re.fullmatch(rf"\s*{label}\s*:?\s*", zeile, re.IGNORECASE):
 					continue
+				davor = text[max(zeile_start - 60, 0): zeile_start]
+				treffer_davor = RE_BETRAG.findall(davor)
+				if treffer_davor:
+					try:
+						return zahl(treffer_davor[-1])
+					except ValueError:
+						continue
+				continue
+			try:
+				return zahl(m.group(1))
+			except ValueError:
+				continue
 	return None
+
+
+def finde_waehrung(text):
+	"""ISO-Code der Rechnungswährung (EUR, USD, GBP, CHF) aus Symbolen und Codes."""
+	zaehler = {
+		"EUR": len(re.findall(r"€|\bEUR\b", text)),
+		"USD": len(re.findall(r"\$|\bUSD\b|\bUS-Dollar", text)),
+		"GBP": len(re.findall(r"£|\bGBP\b", text)),
+		"CHF": len(re.findall(r"\bCHF\b|\bSFr\b", text)),
+	}
+	zaehler["EUR"] -= len(re.findall(r"Stammkapital:?\s*[\d.,]+\s*(?:€|EUR)", text))
+	beste = max(zaehler, key=zaehler.get)
+	return beste if zaehler[beste] > 0 else "EUR"
 
 
 def finde_ust_ids(text):
@@ -325,6 +361,7 @@ def analysiere(pfad, bekannte, eigene):
 			info["nummer"] = saeubern(ex.get("nummer", ""))
 			info["nummer_roh"] = ex.get("nummer", "")
 			info["betrag"] = ex.get("betrag")
+			info["waehrung"] = ex.get("waehrung", "")
 			if ex.get("ust_id"):
 				info["ust_ids"] = [ex["ust_id"]]
 			# Name aus lieferanten.txt hat Vorrang (kurze Namen im Dateinamen)
@@ -346,6 +383,8 @@ def analysiere(pfad, bekannte, eigene):
 		info["nummer"] = saeubern(nr) if nr else ""
 	if info["betrag"] is None:
 		info["betrag"] = finde_betrag(text)
+	if not info.get("waehrung"):
+		info["waehrung"] = finde_waehrung(text)
 	if not info["ust_ids"]:
 		info["ust_ids"] = finde_ust_ids(text)
 

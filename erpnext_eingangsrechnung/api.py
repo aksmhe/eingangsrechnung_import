@@ -24,9 +24,21 @@ from frappe import _
 from frappe.utils import cint, getdate, now_datetime
 
 from erpnext_eingangsrechnung import erkennung as e
+from erpnext_eingangsrechnung import lieferant as lf
 
 EINST = "Eingangsrechnung Import Einstellungen"
 LOG = "Eingangsrechnung Datei"
+
+
+class LieferantFehlt(Exception):
+	"""Lieferant ist in ERPNext nicht vorhanden; enthält einen Vorschlag zum Anlegen."""
+
+	def __init__(self, name, vorschlag):
+		super().__init__(_("Lieferant '{0}' nicht gefunden.").format(name))
+		self.name = name
+		self.vorschlag = vorschlag
+
+
 RECHTSFORM_WOERTER = {"gmbh", "mbh", "gbr", "kg", "ohg", "ug", "ag", "partg", "co", "und", "the", "ltd", "inc"}
 
 
@@ -116,7 +128,7 @@ def _zahler(einst):
 
 
 def _log_eintraege():
-	zeilen = frappe.get_all(LOG, fields=["name", "pfad", "sha256", "groesse", "status", "rechnung"])
+	zeilen = frappe.get_all(LOG, fields=["name", "pfad", "sha256", "groesse", "status", "rechnung", "lieferant"])
 	return {z.sha256: z for z in zeilen}, {z.pfad: z for z in zeilen}
 
 
@@ -264,7 +276,8 @@ def _erfassen(einst):
 	kuerzel_liste = [z["kuerzel"] for z in zahler]
 	nach_hash, nach_pfad = _log_eintraege()
 
-	bericht = {"angelegt": [], "vorhanden": [], "verschoben": [], "fehler": []}
+	bericht = {"angelegt": [], "vorhanden": [], "verschoben": [], "fehler": [], "lieferant_fehlt": []}
+	fehlende = {}
 	for pfad in e.pdf_dateien(ordner):
 		if not e.ZIELMUSTER.match(pfad.name) or e.KEINE_RECHNUNG.search(pfad.name):
 			continue
@@ -279,7 +292,7 @@ def _erfassen(einst):
 				frappe.db.set_value(LOG, eintrag.name, {"pfad": rel, "groesse": groesse})
 				eintrag.pfad = rel
 			if not eintrag:
-				eintrag = frappe._dict(name=None, sha256=h, status=None, rechnung=None)
+				eintrag = frappe._dict(name=None, sha256=h, status=None, rechnung=None, lieferant=None)
 		if eintrag.status == "Ignoriert":
 			continue
 		if not eintrag.rechnung:
@@ -289,6 +302,14 @@ def _erfassen(einst):
 				frappe.db.rollback()
 				frappe.clear_last_message()
 				meldung = str(fehler) or fehler.__class__.__name__
+				if isinstance(fehler, LieferantFehlt):
+					eintrag_fehlt = fehlende.get(fehler.name)
+					if not eintrag_fehlt:
+						eintrag_fehlt = {"name": fehler.name, "vorschlag": fehler.vorschlag, "dateien": []}
+						fehlende[fehler.name] = eintrag_fehlt
+						bericht["lieferant_fehlt"].append(eintrag_fehlt)
+					eintrag_fehlt["dateien"].append(rel)
+					meldung = _("Lieferant '{0}' fehlt in ERPNext.").format(fehler.name)
 				bericht["fehler"].append({"datei": rel, "meldung": meldung})
 				try:
 					_log_setzen(eintrag.name or frappe.db.get_value(LOG, {"sha256": eintrag.sha256}),
@@ -395,7 +416,13 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 	if not teile:
 		raise frappe.ValidationError(_("Dateiname passt nicht zum Schema."))
 	info = e.analysiere(pfad, bekannte, eigene)
-	lieferant = _finde_lieferant(teile["lieferant"], info.get("ust_ids"))
+	lieferant = eintrag.get("lieferant") or _alias(teile["lieferant"]) or _finde_lieferant(
+		teile["lieferant"], info.get("ust_ids"))
+	vorschlag = None
+	if not lieferant:
+		vorschlag = _vorschlag(einst, pfad, teile, info, eigene)
+		if vorschlag.get("tax_id"):
+			lieferant = _finde_lieferant(None, [vorschlag["tax_id"]])
 
 	# Originale Rechnungsnummer (z. B. mit "/") aus der E-Rechnung bevorzugen
 	nummer = teile["nummer"]
@@ -409,13 +436,12 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 			_anhaengen(vorhanden, pfad)
 			hinweis += " " + _("PDF angehängt.")
 		name = _log_setzen(eintrag.name, pfad=rel, sha256=eintrag.sha256, groesse=pfad.stat().st_size,
-			status="Vorhanden", rechnung=vorhanden, hinweis=hinweis)
+			status="Vorhanden", rechnung=vorhanden, hinweis=hinweis, lieferant=lieferant)
 		bericht["vorhanden"].append({"datei": rel, "rechnung": vorhanden, "hinweis": hinweis})
 		return frappe._dict(name=name, sha256=eintrag.sha256, status="Vorhanden", rechnung=vorhanden, pfad=rel)
 
 	if not lieferant:
-		raise frappe.ValidationError(
-			_("Lieferant '{0}' nicht gefunden. Bitte in ERPNext anlegen (oder USt-IdNr. eintragen).").format(teile["lieferant"]))
+		raise LieferantFehlt(teile["lieferant"], vorschlag)
 
 	vorlage = _vorlage(einst.firma, lieferant)
 	if not vorlage.expense_account:
@@ -429,6 +455,15 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 	zahler = next((z for z in _zahler(einst) if z["kuerzel"] == teile["kuerzel"]), None)
 	if zahler:
 		hinweise.append(_("Privat bezahlt von {0} ({1}).").format(zahler["bezeichnung"], zahler["kuerzel"]))
+	firmen_waehrung = frappe.get_cached_value("Company", einst.firma, "default_currency")
+	waehrung = info.get("waehrung") or firmen_waehrung
+	if waehrung != firmen_waehrung:
+		hinweise.append(_("Rechnung in {0} – Umrechnungskurs prüfen (tatsächlich gezahlter Betrag?).").format(waehrung))
+	firmen_land = frappe.get_cached_value("Company", einst.firma, "country")
+	lieferant_land = frappe.db.get_value("Supplier", lieferant, "country")
+	if lieferant_land and firmen_land and lieferant_land != firmen_land:
+		hinweise.append(_("Ausländischer Lieferant ({0}): Umsatzsteuer/Reverse Charge mit dem Steuerberater klären.").format(
+			_(lieferant_land)))
 
 	pi = frappe.new_doc("Purchase Invoice")
 	pi.company = einst.firma
@@ -438,6 +473,8 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 	pi.set_posting_time = 1
 	pi.posting_date = datum
 	pi.disable_rounded_total = cint(einst.rundung_aus)
+	if waehrung != firmen_waehrung and frappe.db.exists("Currency", waehrung):
+		pi.currency = waehrung
 	pi.remarks = "\n".join(hinweise)
 	zeile = {
 		"item_name": vorlage.item_name or _("Rechnung {0} {1}").format(teile["lieferant"], nummer),
@@ -462,10 +499,224 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 	_anhaengen(pi.name, pfad)
 
 	name = _log_setzen(eintrag.name, pfad=rel, sha256=eintrag.sha256, groesse=pfad.stat().st_size,
-		status="Entwurf angelegt", rechnung=pi.name,
+		status="Entwurf angelegt", rechnung=pi.name, lieferant=lieferant,
 		hinweis=_("Betrag nicht erkannt.") if betrag is None else "")
-	bericht["angelegt"].append({"datei": rel, "rechnung": pi.name, "betrag": betrag, "lieferant": lieferant})
+	bericht["angelegt"].append({"datei": rel, "rechnung": pi.name, "betrag": betrag, "lieferant": lieferant,
+		"waehrung": pi.currency})
 	return frappe._dict(name=name, sha256=eintrag.sha256, status="Entwurf angelegt", rechnung=pi.name, pfad=rel)
+
+
+# ---------------------------------------------------------------- Neue Lieferanten
+
+def _alias(name_im_dateinamen):
+	"""Lieferant, der früher schon einer Datei mit diesem Namen zugeordnet wurde."""
+	if not name_im_dateinamen:
+		return None
+	muster = f"% - Rechnung - {name_im_dateinamen} - %"
+	treffer = frappe.get_all(LOG, filters={"pfad": ["like", muster], "lieferant": ["is", "set"]},
+		pluck="lieferant", limit=1)
+	return treffer[0] if treffer and frappe.db.exists("Supplier", treffer[0]) else None
+
+
+def _naechste_kreditornummer(einst):
+	if not cint(einst.kreditor_ab) or not frappe.get_meta("Party Account").has_field("debtor_creditor_number"):
+		return ""
+	nummern = frappe.get_all("Party Account",
+		filters={"parenttype": "Supplier", "company": einst.firma, "debtor_creditor_number": ["is", "set"]},
+		pluck="debtor_creditor_number")
+	zahlen = [int(n) for n in nummern if str(n).strip().isdigit()]
+	return str(max([cint(einst.kreditor_ab) - 1] + zahlen) + 1)
+
+
+def _zahlungsbedingung(einst, tage):
+	vorlagen = frappe.get_all("Payment Terms Template", pluck="name")
+	if tage == 0:
+		sofort = [v for v in vorlagen if re.search(r"sofort|immediate|vorkasse", v, re.IGNORECASE)]
+		if sofort:
+			return sofort[0]
+	elif tage:
+		mit_tagen = []
+		for v in vorlagen:
+			m = re.match(r"\s*(\d+)\s*(?:Tage|days)\s*(?:netto|net)?\s*$", v, re.IGNORECASE)
+			if m:
+				mit_tagen.append((abs(int(m.group(1)) - tage), v))
+		if mit_tagen:
+			return min(mit_tagen)[1]
+	return einst.zahlungsbedingung or ""
+
+
+def _steuerkategorie(einst, land, tax_id):
+	firmen_land = frappe.get_cached_value("Company", einst.firma, "country")
+	firmen_prefix = {"Germany": "DE", "Austria": "AT"}.get(firmen_land, "")
+	if (firmen_prefix and (tax_id or "").upper().startswith(firmen_prefix)) or (land and land == firmen_land):
+		return einst.steuerkat_inland or ""
+	if land and lf.ist_eu(land):
+		return einst.steuerkat_eu or ""
+	if land:
+		return einst.steuerkat_drittland or ""
+	return ""
+
+
+def _vorschlag(einst, pfad, teile, info, eigene):
+	"""Daten für einen neuen Lieferanten aus der Rechnung (zum Prüfen im Dialog)."""
+	try:
+		text, xml = e.pdf_lesen(pfad)
+	except Exception:
+		text, xml = "", None
+	try:
+		datum = getdate(teile["datum"])
+	except Exception:
+		datum = None
+	# Eigene Daten (Benutzer, Firma) nie als Lieferantendaten übernehmen
+	eigene = list(eigene)
+	for nutzer in frappe.get_all("User", filters={"user_type": "System User", "enabled": 1},
+			fields=["name", "email", "first_name", "last_name"]):
+		for wert in (nutzer.name, nutzer.email):
+			if wert and "@" in wert:
+				eigene.append(wert.lower())
+		if nutzer.first_name and nutzer.last_name:
+			eigene.append(f"{nutzer.first_name}.{nutzer.last_name}".lower())
+	for feld in ("email", "website"):
+		wert = frappe.get_cached_value("Company", einst.firma, feld) if frappe.get_meta("Company").has_field(feld) else None
+		if wert:
+			eigene.append(wert.lower().replace("https://", "").replace("http://", "").replace("www.", ""))
+	v = lf.lieferant_vorschlag(text, xml, teile["lieferant"], eigene, datum)
+	if not v.get("name"):
+		v["name"] = teile["lieferant"]
+	if v.get("land") and not frappe.db.exists("Country", v["land"]):
+		v["land"] = ""
+	firmen_waehrung = frappe.get_cached_value("Company", einst.firma, "default_currency")
+	v["waehrung"] = info.get("waehrung") or firmen_waehrung
+	v["standardwaehrung"] = firmen_waehrung if v["waehrung"] == firmen_waehrung else ""
+	v["zahlungsbedingung"] = _zahlungsbedingung(einst, v.get("zahlungsziel_tage"))
+	v["steuerkategorie"] = _steuerkategorie(einst, v.get("land"), v.get("tax_id"))
+	v["lieferantengruppe"] = einst.lieferantengruppe or ""
+	v["kreditor"] = _naechste_kreditornummer(einst)
+	v["kreditor_moeglich"] = 1 if frappe.get_meta("Party Account").has_field("debtor_creditor_number") else 0
+	notiz = []
+	if v.get("steuernummer"):
+		notiz.append(_("Steuernummer: {0}").format(v["steuernummer"]))
+	if v.get("register"):
+		notiz.append(_("Handelsregister: {0}").format(v["register"]))
+	if v.get("kontoinhaber"):
+		notiz.append(_("Kontoinhaber laut Rechnung: {0}").format(v["kontoinhaber"]))
+	if v["waehrung"] != firmen_waehrung:
+		notiz.append(_("Rechnungen in {0}.").format(v["waehrung"]))
+	notiz.append(_("Angelegt aus Rechnung {0} vom {1} ({2}).").format(
+		teile["nummer"], datum.strftime("%d.%m.%Y") if datum else teile["datum"], v.get("quelle")))
+	v["notiz"] = "\n".join(notiz)
+	v["pfad"] = _rel(Path(einst.ordner), pfad)
+	return v
+
+
+@frappe.whitelist(methods=["POST"])
+def lieferant_anlegen(daten, dateien=None):
+	"""Legt Lieferant + Adresse + Kontakt + Bankkonto an (Daten aus dem Dialog)."""
+	if not frappe.has_permission("Supplier", "create"):
+		frappe.throw(_("Keine Berechtigung zum Anlegen von Lieferanten."), frappe.PermissionError)
+	einst = _einstellungen()
+	d = frappe._dict(json.loads(daten) if isinstance(daten, str) else daten)
+	dateien = json.loads(dateien) if isinstance(dateien, str) else (dateien or [])
+	name = (d.supplier_name or "").strip()
+	if not name:
+		frappe.throw(_("Bitte den Namen des Lieferanten eintragen."))
+	if frappe.db.exists("Supplier", {"supplier_name": name}):
+		frappe.throw(_("Einen Lieferanten „{0}“ gibt es schon.").format(name))
+
+	firma = einst.firma
+	sup = frappe.new_doc("Supplier")
+	sup.supplier_name = name
+	sup.supplier_type = "Company"
+	sup.supplier_group = d.supplier_group or None
+	sup.country = d.land or None
+	sup.tax_id = (d.tax_id or "").strip() or None
+	sup.tax_category = d.tax_category or None
+	sup.payment_terms = d.payment_terms or None
+	sup.website = (d.website or "").strip() or None
+	sup.supplier_details = (d.notiz or "").strip() or None
+	if d.default_currency:
+		sup.default_currency = d.default_currency
+	konto = frappe.get_cached_value("Company", firma, "default_payable_account")
+	if konto:
+		zeile = {"company": firma, "account": konto}
+		if d.kreditor and frappe.get_meta("Party Account").has_field("debtor_creditor_number"):
+			zeile["debtor_creditor_number"] = str(d.kreditor).strip()
+		sup.append("accounts", zeile)
+	sup.insert()
+
+	ergebnis = {"lieferant": sup.name, "adresse": None, "kontakt": None, "bankkonto": None, "hinweise": []}
+
+	if d.strasse or d.ort:
+		land = d.land or frappe.get_cached_value("Company", firma, "country")
+		adresse = frappe.get_doc({
+			"doctype": "Address",
+			"address_title": name,
+			"address_type": "Billing",
+			"address_line1": d.strasse or d.ort,
+			"address_line2": d.adresszusatz or None,
+			"pincode": d.plz or None,
+			"city": d.ort or "-",
+			"state": d.bundesland or None,
+			"country": land,
+			"email_id": d.email or None,
+			"phone": d.telefon or None,
+			"is_primary_address": 1,
+			"links": [{"link_doctype": "Supplier", "link_name": sup.name}],
+		})
+		adresse.insert()
+		ergebnis["adresse"] = adresse.name
+		from frappe.contacts.doctype.address.address import get_address_display
+
+		frappe.db.set_value("Supplier", sup.name, {
+			"supplier_primary_address": adresse.name,
+			"primary_address": get_address_display(adresse.as_dict()),
+		})
+
+	if d.email or d.telefon:
+		kontakt = frappe.get_doc({
+			"doctype": "Contact",
+			"first_name": name[:140],
+			"is_primary_contact": 1,
+			"links": [{"link_doctype": "Supplier", "link_name": sup.name}],
+		})
+		if d.email:
+			kontakt.append("email_ids", {"email_id": d.email.strip(), "is_primary": 1})
+		if d.telefon:
+			kontakt.append("phone_nos", {"phone": d.telefon.strip(), "is_primary_phone": 1})
+		kontakt.insert()
+		ergebnis["kontakt"] = kontakt.name
+		frappe.db.set_value("Supplier", sup.name, "supplier_primary_contact", kontakt.name)
+
+	iban = re.sub(r"\s", "", (d.iban or "").upper())
+	if iban:
+		bank = (d.bank or "").strip()
+		if not bank:
+			ergebnis["hinweise"].append(_("IBAN ohne Banknamen – Bankkonto nicht angelegt, IBAN steht in den Details."))
+			frappe.db.set_value("Supplier", sup.name, "supplier_details",
+				((sup.supplier_details or "") + "\n" + _("IBAN: {0} {1}").format(iban, d.bic or "")).strip())
+		else:
+			if not frappe.db.exists("Bank", bank):
+				frappe.get_doc({"doctype": "Bank", "bank_name": bank, "swift_number": d.bic or None}).insert()
+			konto_bank = frappe.get_doc({
+				"doctype": "Bank Account",
+				"account_name": (d.kontoinhaber or name)[:140],
+				"bank": bank,
+				"iban": iban,
+				"party_type": "Supplier",
+				"party": sup.name,
+				"is_default": 1,
+			})
+			konto_bank.insert()
+			ergebnis["bankkonto"] = konto_bank.name
+
+	# Dateien diesem Lieferanten zuordnen, damit der nächste Lauf ihn sicher findet
+	for rel in dateien:
+		name_log = frappe.db.get_value(LOG, {"pfad": rel})
+		if name_log:
+			frappe.db.set_value(LOG, name_log, {"lieferant": sup.name,
+				"hinweis": _("Lieferant {0} angelegt – wird beim nächsten Lauf erfasst.").format(sup.name)})
+	frappe.db.commit()
+	return ergebnis
 
 
 # ---------------------------------------------------------------- Bezahlte verschieben
