@@ -6,6 +6,8 @@ Liest Eingangsrechnungen (PDF, auch ZUGFeRD/Factur-X) aus einem Ordner, benennt 
 
 Alles läuft auf dem eigenen Server. Es werden **keine Cloud- oder KI-Dienste** benutzt, keine Rechnungsdaten verlassen das System (DSGVO).
 
+- Entwickelt von [AffiKSys](https://affiksys.com/), siehe [unten](#entwickelt-von).
+
 ## Was die App macht
 
 1. **Beim Öffnen der Liste „Eingangsrechnung“** durchsucht ERPNext den eingestellten Ordner samt Unterordnern.
@@ -80,6 +82,18 @@ Voraussetzungen: Frappe/ERPNext 15 oder 16. `pypdf` ist bereits Teil von Frappe.
 
 Frappe/ERPNext app that watches a folder of incoming supplier invoices (PDF, incl. ZUGFeRD/Factur-X). When the *Purchase Invoice* list is opened, it offers to rename new files to `YYYY-MM-DD - Rechnung - Supplier - InvoiceNo[ - PAYER].pdf` (suggestions from rule-based text extraction), then creates **draft** Purchase Invoices (gross amount, expense account from the supplier's last invoice, PDF attached). Existing invoices are detected by supplier + invoice number. Optionally, paid invoices are moved from the "open invoices" folder to configurable target folders (company bank vs. paid privately by a partner). Nothing is ever submitted automatically, and no external/cloud/AI services are used.
 
+---
+
+## Entwickelt von
+
+<a href="https://affiksys.com/" title="Zur Webseite von AffiKSys: affiksys.com"><img src="https://raw.githubusercontent.com/aksmhe/erpnext_girocode/main/docs/affiksys-karte.png" alt="AffiKSys – Affiliate KDP Systems" width="210"></a>
+
+Entwickelt von der **[Lerner & Heide AffiKSys GbR](https://affiksys.com/)** für den eigenen Einsatz mit ERPNext und kostenlos für alle bereitgestellt.
+Fehler oder Ideen? Gern als [Issue auf GitHub](https://github.com/aksmhe/eingangsrechnung_import/issues) melden.
+
+---
+
 ## Lizenz
 
-MIT
+MIT, siehe [license.txt](license.txt). Das englische Original ist rechtlich verbindlich.
+Die deutsche Übersetzung zum besseren Verständnis steht in [license_de.txt](license_de.txt).
