@@ -23,7 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, getdate, now_datetime
 
-from eingangsrechnung_import import erkennung as e
+from erpnext_eingangsrechnung import erkennung as e
 
 EINST = "Eingangsrechnung Import Einstellungen"
 LOG = "Eingangsrechnung Datei"
@@ -158,7 +158,7 @@ def pruefen(manuell=0):
 		bekannt = nach_pfad.get(rel)
 		if bekannt and bekannt.status == "Ignoriert" and bekannt.groesse == st.st_size:
 			continue
-		schluessel = f"eingangsrechnung_import|{rel}|{st.st_mtime}|{st.st_size}"
+		schluessel = f"erpnext_eingangsrechnung|{rel}|{st.st_mtime}|{st.st_size}"
 		info = cache.get_value(schluessel)
 		if info is None:
 			info = e.analysiere(pfad, bekannte, eigene)

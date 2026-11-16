@@ -1,6 +1,6 @@
 // Eingangsrechnung Import: beim Öffnen der Liste "Eingangsrechnung" den
 // Rechnungsordner prüfen, Umbenennen anbieten und Entwürfe anlegen.
-frappe.provide("eingangsrechnung_import");
+frappe.provide("erpnext_eingangsrechnung");
 
 (function () {
 	const einstellungen = (frappe.listview_settings["Purchase Invoice"] =
@@ -12,51 +12,51 @@ frappe.provide("eingangsrechnung_import");
 		if (!frappe.model.can_create("Purchase Invoice")) return;
 
 		listview.page.add_menu_item(__("Rechnungsordner prüfen"), () =>
-			eingangsrechnung_import.start(listview, true)
+			erpnext_eingangsrechnung.start(listview, true)
 		);
 		if (frappe.user.has_role(["System Manager", "Accounts Manager"])) {
 			listview.page.add_menu_item(__("Einstellungen Rechnungsordner"), () =>
 				frappe.set_route("Form", "Eingangsrechnung Import Einstellungen")
 			);
 		}
-		eingangsrechnung_import.start(listview, false);
+		erpnext_eingangsrechnung.start(listview, false);
 	};
 })();
 
-eingangsrechnung_import.start = function (listview, manuell) {
-	if (eingangsrechnung_import.laeuft) return;
-	eingangsrechnung_import.laeuft = true;
+erpnext_eingangsrechnung.start = function (listview, manuell) {
+	if (erpnext_eingangsrechnung.laeuft) return;
+	erpnext_eingangsrechnung.laeuft = true;
 	frappe.call({
-		method: "eingangsrechnung_import.api.pruefen",
+		method: "erpnext_eingangsrechnung.api.pruefen",
 		args: { manuell: manuell ? 1 : 0 },
 		freeze: manuell,
 		freeze_message: __("Rechnungsordner wird geprüft …"),
 		callback(r) {
 			const d = r.message || {};
 			if (!d.aktiv) {
-				eingangsrechnung_import.laeuft = false;
+				erpnext_eingangsrechnung.laeuft = false;
 				if (manuell && d.fehler) frappe.msgprint(d.fehler);
 				return;
 			}
 			if (d.fehler) {
-				eingangsrechnung_import.laeuft = false;
+				erpnext_eingangsrechnung.laeuft = false;
 				if (manuell) frappe.msgprint(d.fehler);
 				else frappe.show_alert({ message: d.fehler, indicator: "orange" }, 8);
 				return;
 			}
 			if (d.umbenennen && d.umbenennen.length) {
-				eingangsrechnung_import.dialog(listview, d, manuell);
+				erpnext_eingangsrechnung.dialog(listview, d, manuell);
 			} else {
-				eingangsrechnung_import.erfassen(listview, manuell);
+				erpnext_eingangsrechnung.erfassen(listview, manuell);
 			}
 		},
 		error() {
-			eingangsrechnung_import.laeuft = false;
+			erpnext_eingangsrechnung.laeuft = false;
 		},
 	});
 };
 
-eingangsrechnung_import.dialog = function (listview, daten, manuell) {
+erpnext_eingangsrechnung.dialog = function (listview, daten, manuell) {
 	const esc = frappe.utils.escape_html;
 	const zahler_optionen = ['<option value="">—</option>']
 		.concat(
@@ -69,7 +69,7 @@ eingangsrechnung_import.dialog = function (listview, daten, manuell) {
 	const zeilen = daten.umbenennen
 		.map((f, i) => {
 			const link =
-				"/api/method/eingangsrechnung_import.api.datei_anzeigen?pfad=" + encodeURIComponent(f.pfad);
+				"/api/method/erpnext_eingangsrechnung.api.datei_anzeigen?pfad=" + encodeURIComponent(f.pfad);
 			const betrag = f.betrag != null ? format_currency(f.betrag, "EUR") : "";
 			return `
 			<tr data-i="${i}">
@@ -128,7 +128,7 @@ eingangsrechnung_import.dialog = function (listview, daten, manuell) {
 				});
 			});
 			frappe.call({
-				method: "eingangsrechnung_import.api.umbenennen",
+				method: "erpnext_eingangsrechnung.api.umbenennen",
 				args: { auftraege: auftraege },
 				freeze: true,
 				freeze_message: __("Dateien werden umbenannt …"),
@@ -142,7 +142,7 @@ eingangsrechnung_import.dialog = function (listview, daten, manuell) {
 							message: fehler.map((x) => `${esc(x.pfad)}: ${esc(x.meldung)}`).join("<br>"),
 						});
 					}
-					eingangsrechnung_import.erfassen(listview, true);
+					erpnext_eingangsrechnung.erfassen(listview, true);
 				},
 			});
 		},
@@ -150,23 +150,23 @@ eingangsrechnung_import.dialog = function (listview, daten, manuell) {
 		secondary_action() {
 			dialog.hide();
 			// Ohne Umbenennen trotzdem die fertig benannten Dateien erfassen
-			eingangsrechnung_import.erfassen(listview, manuell);
+			erpnext_eingangsrechnung.erfassen(listview, manuell);
 		},
 	});
 	dialog.onhide = () => {
-		eingangsrechnung_import.laeuft = false;
+		erpnext_eingangsrechnung.laeuft = false;
 	};
 	dialog.show();
 };
 
-eingangsrechnung_import.erfassen = function (listview, manuell) {
-	eingangsrechnung_import.laeuft = true;
+erpnext_eingangsrechnung.erfassen = function (listview, manuell) {
+	erpnext_eingangsrechnung.laeuft = true;
 	frappe.call({
-		method: "eingangsrechnung_import.api.erfassen",
+		method: "erpnext_eingangsrechnung.api.erfassen",
 		freeze: manuell,
 		freeze_message: __("Entwürfe werden angelegt …"),
 		callback(r) {
-			eingangsrechnung_import.laeuft = false;
+			erpnext_eingangsrechnung.laeuft = false;
 			const b = r.message || {};
 			const esc = frappe.utils.escape_html;
 			const link = (name) => `<a href="/app/purchase-invoice/${encodeURIComponent(name)}">${esc(name)}</a>`;
@@ -204,7 +204,7 @@ eingangsrechnung_import.erfassen = function (listview, manuell) {
 			}
 		},
 		error() {
-			eingangsrechnung_import.laeuft = false;
+			erpnext_eingangsrechnung.laeuft = false;
 		},
 	});
 };

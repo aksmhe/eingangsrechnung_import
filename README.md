@@ -1,4 +1,4 @@
-# Eingangsrechnung Import (ERPNext / Frappe)
+# Eingangsrechnungen aus Ordner für ERPNext (erpnext_eingangsrechnung)
 
 *English summary below.*
 
@@ -61,12 +61,12 @@ Jede verarbeitete Datei steht in der Liste **Eingangsrechnung Datei** (Status, R
    ```
 3. App in `apps.json` aufnehmen und Image neu bauen:
    ```json
-   {"url": "https://github.com/<konto>/eingangsrechnung_import", "branch": "main"}
+   {"url": "https://github.com/<konto>/erpnext_eingangsrechnung", "branch": "main"}
    ```
-4. `bench --site <site> install-app eingangsrechnung_import` und `bench --site <site> migrate`.
+4. `bench --site <site> install-app erpnext_eingangsrechnung` und `bench --site <site> migrate`.
 5. Einstellungen ausfüllen und „Import aktiv“ setzen.
 
-Ohne Docker: `bench get-app https://github.com/<konto>/eingangsrechnung_import` und `bench --site <site> install-app eingangsrechnung_import`.
+Ohne Docker: `bench get-app https://github.com/<konto>/erpnext_eingangsrechnung` und `bench --site <site> install-app erpnext_eingangsrechnung`.
 
 Voraussetzungen: Frappe/ERPNext 15 oder 16. `pypdf` ist bereits Teil von Frappe.
 
@@ -89,7 +89,7 @@ Frappe/ERPNext app that watches a folder of incoming supplier invoices (PDF, inc
 <a href="https://affiksys.com/" title="Zur Webseite von AffiKSys: affiksys.com"><img src="https://raw.githubusercontent.com/aksmhe/erpnext_girocode/main/docs/affiksys-karte.png" alt="AffiKSys – Affiliate KDP Systems" width="210"></a>
 
 Entwickelt von der **[Lerner & Heide AffiKSys GbR](https://affiksys.com/)** für den eigenen Einsatz mit ERPNext und kostenlos für alle bereitgestellt.
-Fehler oder Ideen? Gern als [Issue auf GitHub](https://github.com/aksmhe/eingangsrechnung_import/issues) melden.
+Fehler oder Ideen? Gern als [Issue auf GitHub](https://github.com/aksmhe/erpnext_eingangsrechnung/issues) melden.
 
 ---
 

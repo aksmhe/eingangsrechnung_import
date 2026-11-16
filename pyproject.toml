@@ -1,5 +1,5 @@
 [project]
-name = "eingangsrechnung_import"
+name = "erpnext_eingangsrechnung"
 authors = [
     { name = "AffiKSys", email = "m.heide@affiksys.com" }
 ]
