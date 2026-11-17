@@ -21,7 +21,7 @@ from pathlib import Path
 
 import frappe
 from frappe import _
-from frappe.utils import cint, getdate, now_datetime
+from frappe.utils import cint, flt, getdate, now_datetime
 
 from erpnext_eingangsrechnung import erkennung as e
 from erpnext_eingangsrechnung import lieferant as lf
@@ -457,8 +457,10 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 		hinweise.append(_("Privat bezahlt von {0} ({1}).").format(zahler["bezeichnung"], zahler["kuerzel"]))
 	firmen_waehrung = frappe.get_cached_value("Company", einst.firma, "default_currency")
 	waehrung = info.get("waehrung") or firmen_waehrung
+	fremd_hinweis = ""
 	if waehrung != firmen_waehrung:
-		hinweise.append(_("Rechnung in {0} – Umrechnungskurs prüfen (tatsächlich gezahlter Betrag?).").format(waehrung))
+		waehrung, betrag, fremd_hinweis = _fremdwaehrung(einst.firma, lieferant, waehrung, firmen_waehrung, betrag, datum)
+		hinweise.append(fremd_hinweis)
 	firmen_land = frappe.get_cached_value("Company", einst.firma, "country")
 	lieferant_land = frappe.db.get_value("Supplier", lieferant, "country")
 	if lieferant_land and firmen_land and lieferant_land != firmen_land:
@@ -500,10 +502,45 @@ def _neue_datei(einst, ordner, pfad, rel, eintrag, bekannte, eigene, kuerzel_lis
 
 	name = _log_setzen(eintrag.name, pfad=rel, sha256=eintrag.sha256, groesse=pfad.stat().st_size,
 		status="Entwurf angelegt", rechnung=pi.name, lieferant=lieferant,
-		hinweis=_("Betrag nicht erkannt.") if betrag is None else "")
+		hinweis=_("Betrag nicht erkannt.") if betrag is None else fremd_hinweis)
 	bericht["angelegt"].append({"datei": rel, "rechnung": pi.name, "betrag": betrag, "lieferant": lieferant,
-		"waehrung": pi.currency})
+		"waehrung": pi.currency, "hinweis": fremd_hinweis})
 	return frappe._dict(name=name, sha256=eintrag.sha256, status="Entwurf angelegt", rechnung=pi.name, pfad=rel)
+
+
+def _fremdwaehrung(firma, lieferant, waehrung, firmen_waehrung, betrag, datum):
+	"""Rechnung in fremder Währung.
+
+	ERPNext bucht eine Rechnung in Fremdwährung nur über ein Kreditorenkonto in
+	dieser Währung. Gibt es das für den Lieferanten nicht, wird der Entwurf in
+	Firmenwährung angelegt. Umgerechnet wird nur mit einem in ERPNext gespeicherten
+	Kurs (Currency Exchange) – die App fragt keinen Kurs im Internet ab.
+	Gibt (waehrung, betrag, hinweis) zurück.
+	"""
+	from erpnext.accounts.party import get_party_account_currency
+
+	betrag_text = "{0} {1}".format(frappe.format_value(betrag, {"fieldtype": "Float", "precision": 2})
+		if betrag is not None else "?", waehrung)
+	try:
+		konto_waehrung = get_party_account_currency("Supplier", lieferant, firma)
+	except Exception:
+		konto_waehrung = firmen_waehrung
+	if konto_waehrung == waehrung and frappe.db.exists("Currency", waehrung):
+		return waehrung, betrag, _("Rechnung in {0} – Umrechnungskurs prüfen (tatsächlich gezahlter Betrag?).").format(waehrung)
+
+	kurs = frappe.get_all("Currency Exchange",
+		filters={"from_currency": waehrung, "to_currency": firmen_waehrung, "date": ["<=", datum], "for_buying": 1},
+		fields=["exchange_rate", "date"], order_by="date desc", limit=1)
+	if betrag is not None and kurs and kurs[0].exchange_rate:
+		umgerechnet = flt(betrag * flt(kurs[0].exchange_rate), 2)
+		return firmen_waehrung, umgerechnet, _(
+			"Rechnung über {0}. Umgerechnet mit gespeichertem Kurs {1} vom {2} – "
+			"bitte mit dem tatsächlich gezahlten {3}-Betrag (Kontoauszug) vergleichen.").format(
+			betrag_text, kurs[0].exchange_rate, getdate(kurs[0].date).strftime("%d.%m.%Y"), firmen_waehrung)
+	return firmen_waehrung, betrag, _(
+		"ACHTUNG: Rechnung über {0}. Der Betrag im Entwurf ist noch der {1}-Betrag – "
+		"bitte den tatsächlich gezahlten {2}-Betrag aus dem Kontoauszug eintragen.").format(
+		betrag_text, waehrung, firmen_waehrung)
 
 
 # ---------------------------------------------------------------- Neue Lieferanten

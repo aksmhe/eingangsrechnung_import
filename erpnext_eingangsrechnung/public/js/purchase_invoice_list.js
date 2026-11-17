@@ -201,7 +201,7 @@ erpnext_eingangsrechnung.ergebnis = function (listview, manuell, b) {
 						(x) =>
 							`${link(x.rechnung)} – ${esc(x.lieferant)} – ${
 								x.betrag != null ? format_currency(x.betrag, x.waehrung || "EUR") : __("Betrag fehlt")
-							}<div class="text-muted small">${esc(x.datei)}</div>`
+							}${x.hinweis ? `<div class="small" style="color: var(--orange-600, #c05621)">${esc(x.hinweis)}</div>` : ""}<div class="text-muted small">${esc(x.datei)}</div>`
 					)
 					.join("")
 		);
